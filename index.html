@@ -101,23 +101,28 @@
     let slotHours = generateTimeSlots(8, 20, 30);
     let usuario = null;
 
-    document.getElementById("googleLoginBtn").addEventListener("click", async () => {
+    document.getElementById("googleLoginBtn").addEventListener("click", () => {
       const provider = new firebase.auth.GoogleAuthProvider();
-      try {
-        const result = await auth.signInWithPopup(provider);
-        const user = result.user;
-        usuario = {
-          nombre: user.displayName,
-          email: user.email,
-          uid: user.uid
-        };
-        await db.ref(`usuarios/${usuario.uid}`).set(usuario);
-        localStorage.setItem("usuario", JSON.stringify(usuario));
-        mostrarCalendario(usuario);
-      } catch (error) {
-        console.error("Error en login:", error);
+      auth.signInWithRedirect(provider);
+    });
+    
+    auth.getRedirectResult()
+      .then(async (result) => {
+        if (result.user) {
+          const user = result.user;
+          usuario = {
+            nombre: user.displayName,
+            email: user.email,
+            uid: user.uid
+          };
+          await db.ref(`usuarios/${usuario.uid}`).set(usuario);
+          localStorage.setItem("usuario", JSON.stringify(usuario));
+          mostrarCalendario(usuario);
+        }
+      })
+      .catch((error) => {
+        console.error("Error en login (redirect):", error);
         alert("Hubo un problema al iniciar sesión.");
-      }
     });
 
     prevMonthBtn.addEventListener("click", () => {
@@ -260,6 +265,7 @@
   </script>
 </body>
 </html>
+
 
 
 
