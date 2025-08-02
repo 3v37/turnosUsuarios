@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login y Reservas</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 10px auto;
+      display: block;
+    }
+    .calendar-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 20px 0;
+    }
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .day-cell {
+      border: 1px solid #ccc;
+      min-height: 160px;
+      padding: 5px;
+      font-size: 13px;
+    }
+    .day-header {
+      font-weight: bold;
+      text-align: center;
+    }
+    .slot {
+      margin: 2px 0;
+      padding: 2px 4px;
+      cursor: pointer;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+    .available { background-color: #c8e6c9; }
+    .reserved { background-color: #b0bec5; color: #555; cursor: not-allowed; }
+    .inactive { background-color: #f5f5f5; color: #aaa; }
+  </style>
+</head>
+<body>
+
+  <div id="loginSection">
+    <h2>Ingresar</h2>
+    <button id="googleLoginBtn">Ingresar con Google</button>
+  </div>
+
+  <div id="calendarioSection" style="display:none;">
+    <h2>Bienvenido, <span id="nombreUsuario"></span></h2>
+    <div class="calendar-nav">
+      <button id="prevMonth">← Mes anterior</button>
+      <h2 id="monthLabel"></h2>
+      <button id="nextMonth">Mes siguiente →</button>
+    </div>
+    <div class="calendar-grid" id="calendar"></div>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-auth-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDMXulKEXQzCgIw63LJZhkgFJQfasKzFOk",
+      authDomain: "turnos-online-70d75.localhost.com",
+      databaseURL: "https://turnos-online-70d75-default-rtdb.firebaseio.com",
+      projectId: "turnos-online-70d75",
+      storageBucket: "turnos-online-70d75.firebasestorage.app",
+      messagingSenderId: "473409366788",
+      appId: "1:473409366788:web:dd7de3ad76acdee95bfe51",
+      measurementId: "G-SXSNY7XVYD"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const auth = firebase.auth();
+
+    const loginSection = document.getElementById("loginSection");
+    const calendarioSection = document.getElementById("calendarioSection");
+    const nombreUsuarioEl = document.getElementById("nombreUsuario");
+
+    const calendarEl = document.getElementById("calendar");
+    const monthLabel = document.getElementById("monthLabel");
+    const prevMonthBtn = document.getElementById("prevMonth");
+    const nextMonthBtn = document.getElementById("nextMonth");
+
+    let currentDate = new Date();
+    let slotHours = generateTimeSlots(8, 20, 30);
+    let usuario = null;
+
+    document.getElementById("googleLoginBtn").addEventListener("click", async () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        const result = await auth.signInWithPopup(provider);
+        const user = result.user;
+        usuario = {
+          nombre: user.displayName,
+          email: user.email,
+          uid: user.uid
+        };
+        await db.ref(`usuarios/${usuario.uid}`).set(usuario);
+        localStorage.setItem("usuario", JSON.stringify(usuario));
+        mostrarCalendario(usuario);
+      } catch (error) {
+        console.error("Error en login:", error);
+        alert("Hubo un problema al iniciar sesión.");
+      }
+    });
+
+    prevMonthBtn.addEventListener("click", () => {
+      currentDate.setMonth(currentDate.getMonth() - 1);
+      renderCalendar();
+    });
+
+    nextMonthBtn.addEventListener("click", () => {
+      currentDate.setMonth(currentDate.getMonth() + 1);
+      renderCalendar();
+    });
+
+    const usuarioJSON = localStorage.getItem("usuario");
+    if (usuarioJSON) {
+      try {
+        const usuarioGuardado = JSON.parse(usuarioJSON);
+        if (usuarioGuardado && usuarioGuardado.uid) {
+          mostrarCalendario(usuarioGuardado);
+        }
+      } catch {}
+    }
+
+    function mostrarCalendario(u) {
+      usuario = u;
+      loginSection.style.display = "none";
+      calendarioSection.style.display = "block";
+      nombreUsuarioEl.textContent = usuario.nombre;
+      renderCalendar();
+    }
+
+    function generateTimeSlots(start, end, interval) {
+      const slots = [];
+      const date = new Date();
+      date.setHours(start, 0, 0, 0);
+      const endTime = new Date();
+      endTime.setHours(end, 0, 0, 0);
+
+      while (date < endTime) {
+        const h = date.getHours().toString().padStart(2, '0');
+        const m = date.getMinutes().toString().padStart(2, '0');
+        slots.push(`${h}:${m}`);
+        date.setMinutes(date.getMinutes() + interval);
+      }
+      return slots;
+    }
+
+    function getMonthDays(year, month) {
+      const firstDay = new Date(year, month, 1);
+      const startDay = firstDay.getDay() || 7;
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      const calendar = [];
+      let day = 1 - (startDay - 1);
+
+      for (let i = 0; i < 6 * 7; i++) {
+        const current = new Date(year, month, day);
+        calendar.push({
+          date: current,
+          day: current.getDate(),
+          inMonth: current.getMonth() === month,
+          key: current.toISOString().slice(0, 10)
+        });
+        day++;
+      }
+      return calendar;
+    }
+
+    async function loadMonthData(year, month) {
+      const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+      const disponibilidadSnap = await db.ref(`disponibilidad/${monthKey}`).get();
+      const reservasSnap = await db.ref(`reservas/${monthKey}`).get();
+      const disponibilidad = disponibilidadSnap.exists() ? disponibilidadSnap.val() : {};
+      const reservas = reservasSnap.exists() ? reservasSnap.val() : {};
+      return { disponibilidad, reservas };
+    }
+
+    async function renderCalendar() {
+      calendarEl.innerHTML = "";
+
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const days = getMonthDays(year, month);
+      const { disponibilidad, reservas } = await loadMonthData(year, month);
+
+      const dayNames = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+      dayNames.forEach(name => {
+        const header = document.createElement("div");
+        header.className = "day-header";
+        header.textContent = name;
+        calendarEl.appendChild(header);
+      });
+
+      days.forEach(({ date, day, inMonth, key }) => {
+        const cell = document.createElement("div");
+        cell.className = "day-cell";
+        if (!inMonth) cell.classList.add("inactive");
+
+        const title = document.createElement("div");
+        title.textContent = day;
+        cell.appendChild(title);
+
+        slotHours.forEach(slot => {
+          const slotEl = document.createElement("div");
+          const monthKey = key.slice(0, 7);
+          const isAvailable = disponibilidad?.[key]?.[slot] === true;
+          const reserva = reservas?.[key]?.[slot];
+
+          if (reserva) {
+            slotEl.className = "slot reserved";
+            slotEl.textContent = `${slot} (Ocupado${reserva.nombre ? ' por ' + reserva.nombre : ''})`;
+          } else if (isAvailable) {
+            slotEl.className = "slot available";
+            slotEl.textContent = slot;
+            slotEl.addEventListener("click", async () => {
+              const confirmMsg = `¿Querés reservar el turno del ${key} a las ${slot}?`;
+              if (confirm(confirmMsg)) {
+                await db.ref(`reservas/${monthKey}/${key}/${slot}`).set({
+                  reservadoPor: usuario.uid,
+                  nombre: usuario.nombre
+                });
+
+                slotEl.classList.remove("available");
+                slotEl.classList.add("reserved");
+                slotEl.textContent = `${slot} (Reservado)`;
+              }
+            });
+          }
+
+          if (isAvailable || reserva) {
+            cell.appendChild(slotEl);
+          }
+        });
+
+        calendarEl.appendChild(cell);
+      });
+
+      const monthName = currentDate.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+      monthLabel.textContent = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    }
+  </script>
+</body>
+</html>
